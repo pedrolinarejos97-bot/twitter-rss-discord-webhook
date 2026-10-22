@@ -1,10 +1,16 @@
-
 name: Discord News Bot
 
 on:
   workflow_dispatch:
   schedule:
     - cron: "*/5 * * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: financialjuice-discord-news
+  cancel-in-progress: false
 
 jobs:
   check-news:
@@ -17,10 +23,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-          cache: npm
+
+      - name: Restore seen-news state
+        uses: actions/cache@v4
+        with:
+          path: state.json
+          key: financialjuice-state-${{ github.run_id }}
+          restore-keys: |
+            financialjuice-state-
 
       - name: Install dependencies
-        run: npm install
+        run: npm install --no-audit --no-fund
 
-      - name: Run news bot
-        run: npm start
+      - name: Run filtered news check
+        run: node index.js
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
