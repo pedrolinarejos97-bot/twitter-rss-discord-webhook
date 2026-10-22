@@ -1,137 +1,115 @@
 const axios = require('axios');
-const rss = require('rss-parser');
-const { settings, feeds } = require('./settings.json');
+const Parser = require('rss-parser');
+const fs = require('fs');
 
-const parser = new rss();
+const FEED_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
+const WEBHOOK = process.env.DISCORD_WEBHOOK;
+const STATE_FILE = 'state.json';
+const parser = new Parser();
+const MAX_AGE_MINUTES = 12;
+const MAX_SEEN = 500;
 
-let lastUpdated = new Date();
-let latestCheckedFeedItemDate = lastUpdated;
-const DEBUG = false;
-if (DEBUG) {
-  console.log('DEBUG MODE');
-  // move lastUpdated back
-  // lastUpdated = new Date(lastUpdated.getTime() - 20 * 60 * 1000);
-  latestCheckedFeedItemDate = lastUpdated;
-  settings.interval_minutes = 0.5;
-}
+const IMPORTANT_PATTERNS = [
+  // Central banks and rates
+  /\b(fed|federal reserve|powell|fomc|interest rates?|rate decision|rate cut|rate hike|ecb|boj|boe|central bank|monetary policy|treasury yields?|bond yields?)\b/i,
+  // High-impact US macro
+  /\b(cpi|core cpi|pce|core pce|nfp|nonfarm payrolls?|payrolls|jobless claims|unemployment rate|nonfarm|gdp|ism|pmi|retail sales|producer price index|ppi|inflation|consumer prices?)\b/i,
+  // Indexes and risk assets
+  /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|us stocks?|stock futures|equity futures|dow jones|wall street|tech stocks?|megacap)\b/i,
+  // Dollar, FX and commodities
+  /\b(us dollar|dollar index|dxy|usd|gold|bullion|xau|crude oil|oil prices?|wti|brent|opec|natural gas|energy prices?)\b/i,
+  // Market-moving language
+  /\b(breaking|market moving|surprise|unexpectedly|emergency|urgent|intervention|liquidity crisis|default|bank failure|banking crisis|recession|ceasefire|invasion|missile|airstrike|war declared|sanctions|tariffs?|trade war|oil supply|shipping disruption|geopolitical)\b/i
+];
 
-setInterval(() => {
-  checkAllFeeds();
-  // Update the last updated time
-  lastUpdated = latestCheckedFeedItemDate;
-}, 60 * 1000 * settings.interval_minutes);
-checkAllFeeds();
+const GEOPOLITICAL_PATTERN = /\b(breaking|urgent|emergency|war|invasion|missile|airstrike|attack|explosion|sanctions|tariffs?|ceasefire|coup|nuclear|strait of hormuz|red sea|geopolitical|oil supply disruption|shipping disruption)\b/i;
 
-// Reads a feed and sends a message to the webhook
-function handleFeed(feed) {
-  // Get the feed
-  const url = feed.rss;
-  // Fetch the feed
-  parser.parseURL(url, async (err, parsed) => {
-    if (err) {
-      console.error(err);
-      return;
-    }
-    // Iterate through feed items from oldest to newest
-    for (const item of parsed.items.reverse()) {
-      const itemDate = new Date(item.pubDate);
-      // console.log(`Checking ${item.title} from ${itemDate} against ${lastUpdated}...`);
-      // Check if the item is newer than the last updated time
-      if (itemDate > lastUpdated) {
-        handleFeedItem(item, feed);
-        latestCheckedFeedItemDate = Math.max(latestCheckedFeedItemDate, itemDate);
-      }
-    }
-  });
-}
-
-function sendMessageToWebhook(message = '', webhook) {
-  axios
-    .post(webhook, {
-      content: message,
-    })
-    .then(() => {
-      console.log(`Sent ${message} to ${webhook}`);
-    })
-    .catch((err) => {
-      console.error(err);
-    });
-}
-
-function checkAllFeeds() {
-  console.log(
-    `Checking feeds at ${new Date()}; last updated at ${lastUpdated} and latest checked feed item date at ${latestCheckedFeedItemDate}...`
-  );
-  for (const feed of feeds) {
-    // wait settings.seconds_between_feeds seconds between each feed
-    setTimeout(() => {
-      handleFeed(feed);
-    }, settings.seconds_between_feeds * 1000);
-  }
-}
-
-// Reads and sends a message for a feed item
-async function handleFeedItem(feedItem, feed) {
-  const message = await buildMessageFromFeed(feedItem, feed);
-  sendMessageToWebhook(message, feed.webhook);
-}
-
-async function buildMessageFromFeed(feedItem, feed) {
-  let messageString = '';
-  // Get the title and link
-  const title = feedItem.title;
-  const creator = feedItem.creator;
-  const link = feedItem.link;
-  const itemDate = new Date(feedItem.pubDate);
-
-  // replace link with fxtwitter
-  const fxTwitterLink = new URL(link);
-  fxTwitterLink.hostname = 'fxtwitter.com';
-  fxTwitterLink.hash = '';
-
-  // Build the message
-  messageString += `${creator} posted on <t:${itemDate.valueOf() / 1000}>\n`;
-  messageString += title + '\n';
-  messageString += fxTwitterLink + '\n';
-
-  // add translation if needed
-  if (feed.translate) {
-    // get translation from deepl free
-    const translation = await translate(feedItem.contentSnippet, feed.translate);
-    if (translation) messageString += `\`\`\`${translation}\`\`\`\n`;
-  }
-  return messageString;
-}
-
-// Translate a string and return the translation
-async function translate(text, lang) {
-  var myHeaders = new Headers();
-  myHeaders.append('Authorization', `DeepL-Auth-Key ${settings.deepl_api_key}`);
-  myHeaders.append('Content-Type', 'application/x-www-form-urlencoded');
-
-  var urlencoded = new URLSearchParams();
-  urlencoded.append('text', text);
-  urlencoded.append('target_lang', lang);
-
-  var requestOptions = {
-    method: 'POST',
-    headers: myHeaders,
-    body: urlencoded,
-    redirect: 'follow',
-  };
-
-  // fetch and return response text
-  const response = await fetch('https://api-free.deepl.com/v2/translate', requestOptions);
-  const result = await response.text();
+function loadState() {
   try {
-    const json = JSON.parse(result);
-    // if the detected source language is the same as the target language, return null
-    if (json.translations[0]?.detected_source_language.toLowerCase() === lang.toLowerCase()) {
-      return null;
-    }
-    return json.translations[0]?.text;
-  } catch (error) {
-    console.error(error);
-    return null;
+    const parsed = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    return { initialized: Boolean(parsed.initialized), seen: Array.isArray(parsed.seen) ? parsed.seen : [] };
+  } catch {
+    return { initialized: false, seen: [] };
   }
 }
+
+function itemId(item) {
+  return item.guid || item.link || `${item.title || ''}|${item.pubDate || ''}`;
+}
+
+function isRelevant(item) {
+  const text = `${item.title || ''} ${item.contentSnippet || ''} ${item.content || ''}`
+    .replace(/<[^>]*>/g, ' ')
+    .replace(/&nbsp;/g, ' ');
+  const isMarketRelevant = IMPORTANT_PATTERNS.some((pattern) => pattern.test(text));
+  const isUrgentGeopolitical = GEOPOLITICAL_PATTERN.test(text);
+  return isMarketRelevant || isUrgentGeopolitical;
+}
+
+async function translateToSpanish(text) {
+  const clean = String(text || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+  if (!clean) return '';
+  try {
+    const response = await axios.get('https://api.mymemory.translated.net/get', {
+      params: { q: clean.slice(0, 450), langpair: 'en|es' },
+      timeout: 10000
+    });
+    const translated = response.data?.responseData?.translatedText;
+    if (response.data?.responseStatus === 200 && translated) return translated;
+    console.warn('MyMemory no devolvió traducción válida; se enviará el titular original.');
+  } catch (error) {
+    console.warn('Falló la traducción gratuita:', error.message);
+  }
+  return clean;
+}
+
+async function sendDiscord(message) {
+  if (!WEBHOOK) throw new Error('Falta el secreto DISCORD_WEBHOOK en GitHub Actions.');
+  await axios.post(WEBHOOK, { content: message }, { timeout: 15000 });
+}
+
+async function main() {
+  const state = loadState();
+  console.log('Leyendo RSS de FinancialJuice...');
+  const feed = await parser.parseURL(FEED_URL);
+  const items = (feed.items || []).slice().reverse();
+  const now = Date.now();
+  const seen = new Set(state.seen);
+  const newSeen = [];
+
+  // First execution: establish a baseline and only consider headlines from the last 12 minutes.
+  for (const item of items) {
+    const id = itemId(item);
+    if (!id) continue;
+    const date = new Date(item.isoDate || item.pubDate || 0).getTime();
+    if (seen.has(id)) continue;
+    newSeen.push(id);
+    if (state.initialized && Number.isFinite(date) && now - date <= MAX_AGE_MINUTES * 60 * 1000 && date <= now + 2 * 60 * 1000 && isRelevant(item)) {
+      const title = (item.title || 'Noticia de FinancialJuice').trim();
+      const description = (item.contentSnippet || item.content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
+      const spanish = await translateToSpanish(description ? `${title}. ${description}` : title);
+      const timestamp = Number.isFinite(date) ? Math.floor(date / 1000) : Math.floor(now / 1000);
+      const link = item.link || 'https://www.financialjuice.com/';
+      const message = `🚨 **FINANCIALJUICE · NOTICIA POTENCIALMENTE RELEVANTE**\n<t:${timestamp}:t> · Fuente: FinancialJuice\n\n${spanish.slice(0, 1600)}\n\nOriginal: ${link}`;
+      await sendDiscord(message);
+      console.log('Enviada:', title);
+    } else if (!state.initialized && Number.isFinite(date) && now - date <= MAX_AGE_MINUTES * 60 * 1000 && isRelevant(item)) {
+      const title = (item.title || 'Noticia de FinancialJuice').trim();
+      const spanish = await translateToSpanish(title);
+      const timestamp = Math.floor(date / 1000);
+      const link = item.link || 'https://www.financialjuice.com/';
+      await sendDiscord(`🚨 **FINANCIALJUICE · NOTICIA POTENCIALMENTE RELEVANTE**\n<t:${timestamp}:t> · Fuente: FinancialJuice\n\n${spanish.slice(0, 1600)}\n\nOriginal: ${link}`);
+      console.log('Enviada durante la inicialización:', title);
+    }
+  }
+
+  const combined = [...state.seen, ...newSeen];
+  const unique = [...new Set(combined)].slice(-MAX_SEEN);
+  fs.writeFileSync(STATE_FILE, JSON.stringify({ initialized: true, seen: unique }, null, 2) + '\n');
+  console.log(`Comprobación terminada. Elementos RSS: ${items.length}; IDs nuevos guardados: ${newSeen.length}.`);
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
