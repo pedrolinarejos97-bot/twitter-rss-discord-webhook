@@ -6,7 +6,7 @@ on:
     - cron: "*/5 * * * *"
 
 permissions:
-  contents: read
+  contents: write
 
 concurrency:
   group: financialjuice-discord-news
@@ -18,19 +18,13 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          persist-credentials: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
-
-      - name: Restore seen-news state
-        uses: actions/cache@v4
-        with:
-          path: state.json
-          key: financialjuice-state-${{ github.run_id }}
-          restore-keys: |
-            financialjuice-state-
 
       - name: Install dependencies
         run: npm install --no-audit --no-fund
@@ -39,3 +33,15 @@ jobs:
         run: node index.js
         env:
           DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK }}
+
+      - name: Persist sent-news IDs
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add state.json
+          if ! git diff --cached --quiet; then
+            git commit -m "Update sent-news state [skip ci]"
+            git push
+          else
+            echo "No new relevant news IDs to save."
+          fi
