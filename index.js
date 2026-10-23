@@ -164,7 +164,7 @@ async function main() {
     }
     const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
     const footer = '\n\n⚠️ Análisis automático orientativo; no es señal de compra/venta. Confirma con el precio y el contexto.';
-    let message = blocks.join(separator) + footer;
+    let message = blocks.join(separator) + footer + '\n\n━━━━━━━━━━━━━━━━━━━━';
     if (message.length > 1950) message = blocks.map((block) => block.slice(0, 430)).join(separator).slice(0, 1700) + footer;
     await sendDiscord(message.slice(0, 1990));
     console.log('Enviado grupo de ' + group.length + ' noticia(s).');
