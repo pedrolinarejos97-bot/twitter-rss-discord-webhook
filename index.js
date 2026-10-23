@@ -66,55 +66,48 @@ function analyzeImpact(text) {
   const t = text.toLowerCase();
   const assets = [];
   const reasons = [];
-  const add = (asset, reason) => {
-    if (!assets.includes(asset)) assets.push(asset);
-    if (reason && !reasons.includes(reason)) reasons.push(reason);
-  };
-
-  const rates = /\b(fed|federal reserve|powell|fomc|ecb|boj|boe|central bank|interest rate|rate cut|rate hike|monetary policy|treasury yield|bond yield|bonds?)\b/i.test(t);
-  const macro = /\b(cpi|pce|inflation|consumer prices?|ppi|producer price|payrolls|nfp|unemployment|jobless claims|gdp|ism|pmi|retail sales|jobs report|economic data)\b/i.test(t);
+  const add = (asset, reason) => { if (!assets.includes(asset)) assets.push(asset); if (reason && !reasons.includes(reason)) reasons.push(reason); };
+  const frenchEurope = /\b(france|french|eurozone|euro area|european|germany|german|eurostat|ecb|european central bank)\b/i.test(t);
+  const usData = /\b(us|united states|american|nonfarm|nfp|federal reserve|fed|powell|ism|core cpi|cpi|pce|treasury)\b/i.test(t);
+  const pmi = /\bpmi\b|purchasing managers|business activity/i.test(t);
+  const rates = /\b(fed|federal reserve|powell|fomc|ecb|boj|boe|central bank|interest rates?|rate cut|rate hike|monetary policy|bond yields?|treasury yields?)\b/i.test(t);
+  const macro = /\b(cpi|pce|inflation|ppi|payrolls|nfp|unemployment|jobless claims|gdp|ism|pmi|retail sales|economic data|business activity)\b/i.test(t);
   const equity = /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|dow jones|wall street|stocks?|equities|shares|tech stocks?)\b/i.test(t);
-  const dollar = /\b(dollar|dxy|usd|currency|forex|foreign exchange)\b/i.test(t);
+  const dollar = /\b(dollar|dxy|usd|eurusd|euro|currency|forex)\b/i.test(t);
   const gold = /\b(gold|bullion|xau|precious metal)\b/i.test(t);
-  const oil = /\b(oil|crude|wti|brent|opec|petroleum|energy supply|strait of hormuz|red sea|shipping disruption)\b/i.test(t);
+  const oil = /\b(oil|crude|wti|brent|opec|petroleum|energy supply|hormuz|red sea|shipping disruption)\b/i.test(t);
   const geopolitics = GEOPOLITICAL_PATTERN.test(t);
-
-  if (rates || macro) {
-    add('Dólar (DXY)', 'Tipos y datos macro pueden cambiar las expectativas sobre la Fed y la demanda de dólares.');
-    add('Bonos / rendimientos', 'Las sorpresas en inflación, empleo o bancos centrales pueden mover rápidamente los rendimientos.');
-    add('Nasdaq y S&P 500', 'El mercado puede reajustar las valoraciones según las perspectivas de tipos y crecimiento.');
-    add('Oro (XAU/USD)', 'Puede reaccionar al dólar, a los rendimientos reales y a la búsqueda de refugio.');
+  const below = /\b(below expectations|missed expectations|weaker than expected|falls short|decline|fell|contraction|below forecast|slows|slowing)\b/i.test(t);
+  const above = /\b(beats expectations|above expectations|stronger than expected|higher than forecast|accelerates|expansion)\b/i.test(t);
+  if (pmi && frenchEurope) {
+    add('Euro (EUR/USD)', 'PMI europeo débil puede aumentar las expectativas de una política más flexible del BCE y presionar al euro; confirma con EUR/USD.');
+    add('Bolsas europeas', 'Una actividad empresarial más débil puede pesar sobre las expectativas de beneficios y el sentimiento bursátil.');
+    add('Bonos europeos', 'Los datos débiles pueden favorecer expectativas de menores tipos y movimientos a la baja en los rendimientos.');
+    add('Nasdaq y S&P 500', 'Efecto normalmente indirecto; ganará relevancia si el dato cambia el sentimiento global o coincide con datos de EE. UU.');
+    add('Oro (XAU/USD)', 'Dirección incierta: puede influir la demanda de refugio, el dólar y los rendimientos.');
+  } else if (rates || macro) {
+    add('Dólar (DXY)', 'Los datos y los bancos centrales pueden cambiar las expectativas de tipos y la demanda de dólares.');
+    add('Bonos / rendimientos', 'Una sorpresa macro puede modificar las expectativas sobre inflación, crecimiento y tipos.');
+    add('Nasdaq y S&P 500', 'Tipos esperados más altos suelen presionar valoraciones; tipos más bajos pueden apoyarlas, según el crecimiento.');
+    add('Oro (XAU/USD)', 'Puede reaccionar al dólar, los rendimientos reales y la búsqueda de refugio.');
   }
-  if (equity) add('Nasdaq y S&P 500', 'La noticia menciona directamente índices o renta variable.');
-  if (dollar) add('Dólar (DXY)', 'Puede cambiar la demanda de dólares y el movimiento de las divisas.');
+  if (equity) add('Nasdaq y S&P 500', 'La noticia menciona directamente renta variable o índices.');
+  if (dollar) add('Dólar / EUR/USD', 'La reacción dependerá de qué divisa se fortalezca y de las expectativas relativas de tipos.');
   if (gold) add('Oro (XAU/USD)', 'La noticia menciona directamente el oro o factores ligados a su demanda.');
-  if (oil) {
-    add('Petróleo (WTI/Brent)', 'La oferta, la demanda y los riesgos de transporte pueden alterar el precio de la energía.');
-    add('Inflación / bonos', 'Un cambio en el precio de la energía puede modificar las expectativas de inflación.');
-  }
-  if (geopolitics) {
-    add('Oro (XAU/USD)', 'La incertidumbre puede aumentar la demanda de activos refugio.');
-    add('Petróleo (WTI/Brent)', 'El riesgo sobre producción o transporte puede provocar movimientos bruscos.');
-    add('Índices bursátiles', 'La noticia puede cambiar el apetito por riesgo y la volatilidad.');
-    add('Dólar y bonos', 'Pueden recibir flujos de refugio; la reacción depende del contexto.');
-  }
-  if (!assets.length) {
-    add('Mercado global', 'Puede afectar al sentimiento general, pero el activo y la dirección no quedan claros solo con el texto.');
-  }
-
-  const high = /\b(emergency|urgent|breaking|surprise|unexpected|crisis|default|bank failure|rate decision|rate cut|rate hike|cpi|core cpi|nfp|nonfarm payrolls|fomc|war|invasion|missile|airstrike|attack|explosion|sanctions|ceasefire|intervention|halt|emergency meeting)\b/i.test(t);
-  const medium = /\b(fed|powell|central bank|inflation|pce|ppi|gdp|ism|pmi|retail sales|jobless claims|unemployment|opec|oil|tariffs?|trade war|geopolitical|bond yields?|treasury|recession|economic data)\b/i.test(t);
-  const impact = high ? 'ALTO' : medium ? 'MEDIO' : 'BAJO';
+  if (oil) { add('Petróleo (WTI/Brent)', 'Oferta, demanda y riesgos de transporte pueden mover el precio de la energía.'); add('Inflación / bonos', 'El precio de la energía puede cambiar las expectativas de inflación y rendimientos.'); }
+  if (geopolitics) { add('Oro (XAU/USD)', 'La incertidumbre puede elevar la demanda de refugio, aunque la reacción no está garantizada.'); add('Petróleo (WTI/Brent)', 'Puede subir si el evento amenaza la producción o el transporte.'); add('Índices bursátiles', 'Puede aumentar la volatilidad y reducir el apetito por riesgo.'); }
+  if (!assets.length) add('Mercado global', 'El texto no permite atribuir un efecto claro a un activo concreto.');
+  const major = /\b(emergency|urgent|breaking|surprise|unexpected|crisis|default|bank failure|rate decision|rate cut|rate hike|core cpi|nfp|nonfarm payrolls|fomc|war|invasion|missile|airstrike|attack|explosion|sanctions|ceasefire|intervention)\b/i.test(t);
+  const impact = major ? 'ALTO' : (macro || rates || oil || geopolitics) ? 'MEDIO' : 'BAJO';
   const impactEmoji = impact === 'ALTO' ? '🔴' : impact === 'MEDIO' ? '🟠' : '🟢';
-
   let bias = 'MIXTO / INCIERTO';
-  if (/\b(rate cut|dovish|lower rates|falling yields|cooler inflation|inflation falls|weak jobs|missed expectations|stimulus|ceasefire|peace deal|dollar falls|dollar weakens|oil supply increase)\b/i.test(t)) bias = 'PODRÍA FAVORECER ACTIVOS DE RIESGO (confirmar reacción)';
-  if (/\b(rate hike|hawkish|higher rates|rising yields|hotter inflation|inflation rises|strong jobs|beats expectations|dollar rises|dollar strengthens|oil supply cut|supply disruption|escalation|invasion|war)\b/i.test(t)) bias = 'PRESIÓN POTENCIAL SOBRE RIESGO / POSIBLE REFUGIO (confirmar reacción)';
-
+  if (below && frenchEurope) bias = 'NEGATIVO PARA LAS PERSPECTIVAS ECONÓMICAS EUROPEAS; reacción de mercado por confirmar';
+  else if (above && frenchEurope) bias = 'MEJORA RELATIVA DE LA ACTIVIDAD EUROPEA; reacción de mercado por confirmar';
+  else if (/\b(rate cut|dovish|lower rates|falling yields|cooler inflation|weak jobs)\b/i.test(t)) bias = 'PODRÍA FAVORECER ACTIVOS DE RIESGO; confirmar reacción';
+  else if (/\b(rate hike|hawkish|higher rates|rising yields|hotter inflation|strong jobs|supply disruption|escalation|invasion|war)\b/i.test(t)) bias = 'PRESIÓN POTENCIAL SOBRE RIESGO / POSIBLE REFUGIO; confirmar reacción';
   const confidence = (rates || macro || equity || dollar || gold || oil || geopolitics) ? 'MEDIA' : 'BAJA';
   return { assets, reasons, impact, impactEmoji, bias, confidence };
 }
-
 async function sendDiscord(message) {
   if (!WEBHOOK) throw new Error('Falta el secreto DISCORD_WEBHOOK en GitHub Actions.');
   await axios.post(WEBHOOK, { content: message }, { timeout: 15000 });
