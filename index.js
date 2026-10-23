@@ -176,7 +176,7 @@ async function main() {
           reasonLines.push('• 🟡 ' + asset + ': ' + reason);
         }
       }
-      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '** · FinancialJuice\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
+      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '**\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
       console.log('Preparada (' + impact.impact + '):', item.title || id);
     }
     const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
