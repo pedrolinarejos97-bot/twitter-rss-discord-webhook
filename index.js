@@ -132,13 +132,12 @@ async function main() {
   for (const item of items) {
     const id = itemId(item);
     if (!id || seen.has(id)) continue;
-    newSeen.push(id);
-
     const date = new Date(item.isoDate || item.pubDate || 0).getTime();
     const recent = Number.isFinite(date) &&
       now - date <= MAX_AGE_MINUTES * 60 * 1000 &&
       date <= now + 2 * 60 * 1000;
     if (!recent || !isRelevant(item)) continue;
+    newSeen.push(id);
 
     const rawText = getItemText(item);
     const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
