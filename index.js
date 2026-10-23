@@ -122,42 +122,52 @@ async function main() {
   const seen = new Set(state.seen);
   const newSeen = [];
 
+  const candidates = [];
   for (const item of items) {
     const id = itemId(item);
     if (!id || seen.has(id)) continue;
     const date = new Date(item.isoDate || item.pubDate || 0).getTime();
-    const recent = Number.isFinite(date) &&
-      now - date <= MAX_AGE_MINUTES * 60 * 1000 &&
-      date <= now + 2 * 60 * 1000;
+    const recent = Number.isFinite(date) && now - date <= MAX_AGE_MINUTES * 60 * 1000 && date <= now + 2 * 60 * 1000;
     if (!recent || !isRelevant(item)) continue;
     newSeen.push(id);
-
-    const rawText = getItemText(item);
-    const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
-    const impact = analyzeImpact(`${rawText} ${spanish}`);
-    const timestamp = Math.floor(date / 1000);
-    const assetList = impact.assets.map((asset) => `• ${asset}`).join('\n');
-    const reasonList = impact.reasons.map((reason) => `• ${reason}`).join('\n');
-    const message = [
-      `${impact.impactEmoji} **IMPACTO POTENCIAL: ${impact.impact}** · FinancialJuice`,
-      `🕒 <t:${timestamp}:t> · Confianza del análisis: ${impact.confidence}`,
-      '',
-      '**📰 RESUMEN EN ESPAÑOL**',
-      spanish.slice(0, 850),
-      '',
-      '**📊 ACTIVOS A VIGILAR**',
-      assetList,
-      '',
-      '**💡 ¿POR QUÉ?**',
-      reasonList,
-      '',
-      `**🧭 SESGO INICIAL:** ${impact.bias}`,
-      '',
-      '⚠️ Clasificación automática orientativa, no una señal de compra/venta. No implica dirección segura; confirma con precio, volumen, calendario y niveles técnicos.'
-    ].join('\n');
-
-    await sendDiscord(message.slice(0, 1950));
-    console.log(`Enviada (${impact.impact}):`, item.title || id);
+    candidates.push({ item, id, date, rawText: getItemText(item) });
+  }
+  const groups = [];
+  const used = new Set();
+  const isPmi = (c) => /\bpmi\b|purchasing managers|managers'? index/i.test(c.rawText);
+  const countryKey = (c) => {
+    const value = ((c.item.title || '') + ' ' + c.rawText).toLowerCase();
+    const countries = [['france', /france|french/], ['germany', /germany|german/], ['eurozone', /euro ?zone|euro area/], ['united kingdom', /united kingdom|\buk\b|britain|british/], ['united states', /united states|\bus\b|american/], ['australia', /australia|australian/], ['japan', /japan|japanese/], ['china', /china|chinese/], ['canada', /canada|canadian/]];
+    const match = countries.find((entry) => entry[1].test(value));
+    return match ? match[0] : null;
+  };
+  for (const candidate of candidates) {
+    if (used.has(candidate.id)) continue;
+    const country = countryKey(candidate);
+    if (country && isPmi(candidate) && !GEOPOLITICAL_PATTERN.test(candidate.rawText)) {
+      const group = candidates.filter((other) => !used.has(other.id) && isPmi(other) && countryKey(other) === country && Math.abs(other.date - candidate.date) <= 5 * 60 * 1000 && !GEOPOLITICAL_PATTERN.test(other.rawText));
+      group.forEach((entry) => used.add(entry.id));
+      groups.push(group);
+    } else { used.add(candidate.id); groups.push([candidate]); }
+  }
+  for (const group of groups) {
+    const blocks = [];
+    for (const candidate of group) {
+      const item = candidate.item, id = candidate.id, date = candidate.date, rawText = candidate.rawText;
+      const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
+      const impact = analyzeImpact(rawText + ' ' + spanish);
+      const timestamp = Math.floor(date / 1000);
+      const assetList = impact.assets.map((asset) => '• ' + asset).join('\n');
+      const reasonList = impact.reasons.map((reason) => '• ' + reason).join('\n');
+      blocks.push([impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '** · FinancialJuice', '🕒 <t:' + timestamp + ':t> · Confianza del análisis: ' + impact.confidence, '', '**📰 RESUMEN EN ESPAÑOL**', spanish.slice(0, 520), '', '**📊 ACTIVOS A VIGILAR Y CÓMO PUEDE AFECTAR**', assetList, '', '**💡 ¿POR QUÉ?**', reasonList, '', '**🧭 SESGO INICIAL:** ' + impact.bias].join('\n'));
+      console.log('Preparada (' + impact.impact + '):', item.title || id);
+    }
+    const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
+    const footer = '\n\n⚠️ Análisis automático orientativo; no es señal de compra/venta. Confirma con el precio y el contexto.';
+    let message = blocks.join(separator) + footer;
+    if (message.length > 1950) message = blocks.map((block) => block.slice(0, 430)).join(separator).slice(0, 1700) + footer;
+    await sendDiscord(message.slice(0, 1990));
+    console.log('Enviado grupo de ' + group.length + ' noticia(s).');
   }
 
   const combined = [...state.seen, ...newSeen];
