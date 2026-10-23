@@ -157,16 +157,36 @@ async function main() {
       const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
       const impact = analyzeImpact(rawText + ' ' + spanish);
       const timestamp = Math.floor(date / 1000);
-      const assetList = impact.assets.map((asset) => '• ' + asset).join('\n');
-      const reasonList = impact.reasons.map((reason) => '• ' + reason).join('\n');
-      blocks.push([impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '** · FinancialJuice', '🕒 <t:' + timestamp + ':t> · Confianza del análisis: ' + impact.confidence, '', '**📰 RESUMEN EN ESPAÑOL**', spanish.slice(0, 520), '', '**📊 ACTIVOS A VIGILAR Y CÓMO PUEDE AFECTAR**', assetList, '', '**💡 ¿POR QUÉ?**', reasonList, '', '**🧭 SESGO INICIAL:** ' + impact.bias].join('\n'));
+      const lower = (rawText + ' ' + spanish).toLowerCase();
+      const isUS = /\b(us|united states|american|fed|federal reserve|treasury)\b/i.test(lower);
+      const isPmiNews = /\bpmi\b|purchasing managers/i.test(lower);
+      const isWeak = /\b(below forecast|below expectations|missed expectations|weaker than expected|falls short|contraction|decline|decreased|lower than expected)\b/i.test(lower);
+      const isStrong = /\b(beats expectations|above forecast|above expectations|stronger than expected|higher than forecast)\b/i.test(lower);
+      const sentiment = isWeak && !isStrong ? '🔴' : isStrong && !isWeak ? '🟢' : '🟡';
+      const reasonLines = [];
+      if (isPmiNews && isUS) {
+        reasonLines.push('• ' + sentiment + ' Dólar (DXY): ' + (isWeak ? 'posible presión bajista si el dato reduce las expectativas de tipos; confirmar con otros datos de EE. UU.' : isStrong ? 'posible apoyo si el dato eleva las expectativas de tipos; vigilar rendimientos.' : 'sesgo mixto: el dato no sorprende claramente frente a previsiones.'));
+        reasonLines.push('• ' + (isWeak ? '🟢' : isStrong ? '🔴' : '🟡') + ' Bonos / rendimientos: ' + (isWeak ? 'rendimientos podrían bajar si el mercado descuenta tipos más bajos.' : isStrong ? 'rendimientos podrían subir si el mercado descuenta tipos más altos.' : 'dirección incierta; esperar reacción de los rendimientos.'));
+        reasonLines.push('• ' + (isWeak ? '🟢' : isStrong ? '🔴' : '🟡') + ' Nasdaq y S&P 500: ' + (isWeak ? 'tipos esperados más bajos podrían apoyar las bolsas, aunque la preocupación por crecimiento puede pesar.' : isStrong ? 'tipos esperados más altos pueden presionar valoraciones; un crecimiento sólido también puede apoyar beneficios.' : 'señal mixta; confirmar con precio y rendimientos.'));
+        reasonLines.push('• 🟡 Oro (XAU/USD): dirección incierta; depende del dólar, los rendimientos y la demanda de refugio.');
+      } else {
+        for (let i = 0; i < impact.assets.length; i++) {
+          const asset = impact.assets[i];
+          const reason = impact.reasons[i] || impact.reasons[0] || 'La reacción depende del contexto y del precio.';
+          reasonLines.push('• 🟡 ' + asset + ': ' + reason);
+        }
+      }
+      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '** · FinancialJuice\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
       console.log('Preparada (' + impact.impact + '):', item.title || id);
     }
     const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
-    const footer = '\n\n⚠️ Análisis automático orientativo; no es señal de compra/venta. Confirma con el precio y el contexto.';
+    const footer = '\n\n🟢 Posible efecto positivo · 🔴 posible efecto negativo · 🟡 mixto / incierto. No son porcentajes ni señales de entrada.\n⚠️ Análisis automático orientativo: confirma con precio, volumen y contexto.';
     let message = blocks.join(separator) + footer + '\n\n━━━━━━━━━━━━━━━━━━━━';
-    if (message.length > 1950) message = blocks.map((block) => block.slice(0, 430)).join(separator).slice(0, 1700) + footer;
-    await sendDiscord(message.slice(0, 1990));
+    if (message.length > 1950) {
+      message = blocks.map((block) => block.slice(0, 480)).join(separator) + footer;
+      if (message.length > 1990) message = message.slice(0, 1940) + '\n…';
+    }
+    await sendDiscord(message);
     console.log('Enviado grupo de ' + group.length + ' noticia(s).');
   }
 
