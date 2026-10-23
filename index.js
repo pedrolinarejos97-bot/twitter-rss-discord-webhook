@@ -7,11 +7,11 @@ const WEBHOOK = process.env.DISCORD_WEBHOOK;
 const STATE_FILE = 'state.json';
 const parser = new Parser();
 const MAX_AGE_MINUTES = 12;
-const MAX_SEEN = 500;
+const MAX_SEEN = 800;
 
 const IMPORTANT_PATTERNS = [
   /\b(fed|federal reserve|powell|fomc|interest rates?|rate decision|rate cut|rate hike|ecb|boj|boe|central bank|monetary policy|treasury yields?|bond yields?)\b/i,
-  /\b(cpi|core cpi|pce|core pce|nfp|nonfarm payrolls?|payrolls|jobless claims|unemployment rate|nonfarm|gdp|ism|pmi|retail sales|producer price index|ppi|inflation|consumer prices?)\b/i,
+  /\b(cpi|core cpi|pce|core pce|nfp|nonfarm payrolls?|payrolls|jobless claims|unemployment rate|gdp|ism|pmi|retail sales|producer price index|ppi|inflation|consumer prices?)\b/i,
   /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|us stocks?|stock futures|equity futures|dow jones|wall street|tech stocks?|megacap)\b/i,
   /\b(us dollar|dollar index|dxy|usd|gold|bullion|xau|crude oil|oil prices?|wti|brent|opec|natural gas|energy prices?)\b/i,
   /\b(breaking|market moving|surprise|unexpectedly|emergency|urgent|intervention|liquidity crisis|default|bank failure|banking crisis|recession|ceasefire|invasion|missile|airstrike|war declared|sanctions|tariffs?|trade war|oil supply|shipping disruption|geopolitical)\b/i
@@ -29,7 +29,7 @@ function loadState() {
 }
 
 function itemId(item) {
-  return item.guid || item.link || `${item.title || ''}|${item.pubDate || ''}`;
+  return item.guid || item.link || `${item.title || ''}|${item.isoDate || item.pubDate || ''}`;
 }
 
 function getItemText(item) {
@@ -66,56 +66,53 @@ function analyzeImpact(text) {
   const t = text.toLowerCase();
   const assets = [];
   const reasons = [];
-
   const add = (asset, reason) => {
     if (!assets.includes(asset)) assets.push(asset);
-    if (!reasons.includes(reason)) reasons.push(reason);
+    if (reason && !reasons.includes(reason)) reasons.push(reason);
   };
 
-  if (/\b(fed|federal reserve|powell|fomc|ecb|boj|boe|central bank|interest rate|rate cut|rate hike|monetary policy|treasury yield|bond yield|bonds?)\b/i.test(t)) {
-    add('Bonos y rendimientos', 'Las expectativas de tipos y las compras/ventas de deuda pueden mover los rendimientos.');
-    add('Dólar (DXY)', 'Los cambios esperados en los tipos suelen alterar el atractivo relativo del dólar.');
-    add('Nasdaq y S&P 500', 'Los tipos afectan a la valoración de las acciones, especialmente las tecnológicas.');
-    add('Oro', 'El oro puede reaccionar a los rendimientos reales y al dólar.');
+  const rates = /\b(fed|federal reserve|powell|fomc|ecb|boj|boe|central bank|interest rate|rate cut|rate hike|monetary policy|treasury yield|bond yield|bonds?)\b/i.test(t);
+  const macro = /\b(cpi|pce|inflation|consumer prices?|ppi|producer price|payrolls|nfp|unemployment|jobless claims|gdp|ism|pmi|retail sales|jobs report|economic data)\b/i.test(t);
+  const equity = /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|dow jones|wall street|stocks?|equities|shares|tech stocks?)\b/i.test(t);
+  const dollar = /\b(dollar|dxy|usd|currency|forex|foreign exchange)\b/i.test(t);
+  const gold = /\b(gold|bullion|xau|precious metal)\b/i.test(t);
+  const oil = /\b(oil|crude|wti|brent|opec|petroleum|energy supply|strait of hormuz|red sea|shipping disruption)\b/i.test(t);
+  const geopolitics = GEOPOLITICAL_PATTERN.test(t);
+
+  if (rates || macro) {
+    add('Dólar (DXY)', 'Tipos y datos macro pueden cambiar las expectativas sobre la Fed y la demanda de dólares.');
+    add('Bonos / rendimientos', 'Las sorpresas en inflación, empleo o bancos centrales pueden mover rápidamente los rendimientos.');
+    add('Nasdaq y S&P 500', 'El mercado puede reajustar las valoraciones según las perspectivas de tipos y crecimiento.');
+    add('Oro (XAU/USD)', 'Puede reaccionar al dólar, a los rendimientos reales y a la búsqueda de refugio.');
+  }
+  if (equity) add('Nasdaq y S&P 500', 'La noticia menciona directamente índices o renta variable.');
+  if (dollar) add('Dólar (DXY)', 'Puede cambiar la demanda de dólares y el movimiento de las divisas.');
+  if (gold) add('Oro (XAU/USD)', 'La noticia menciona directamente el oro o factores ligados a su demanda.');
+  if (oil) {
+    add('Petróleo (WTI/Brent)', 'La oferta, la demanda y los riesgos de transporte pueden alterar el precio de la energía.');
+    add('Inflación / bonos', 'Un cambio en el precio de la energía puede modificar las expectativas de inflación.');
+  }
+  if (geopolitics) {
+    add('Oro (XAU/USD)', 'La incertidumbre puede aumentar la demanda de activos refugio.');
+    add('Petróleo (WTI/Brent)', 'El riesgo sobre producción o transporte puede provocar movimientos bruscos.');
+    add('Índices bursátiles', 'La noticia puede cambiar el apetito por riesgo y la volatilidad.');
+    add('Dólar y bonos', 'Pueden recibir flujos de refugio; la reacción depende del contexto.');
+  }
+  if (!assets.length) {
+    add('Mercado global', 'Puede afectar al sentimiento general, pero el activo y la dirección no quedan claros solo con el texto.');
   }
 
-  if (/\b(cpi|pce|inflation|inflationary|consumer prices?|ppi|producer price|payrolls|nfp|unemployment|jobless claims|gdp|ism|pmi|retail sales|economic data|jobs report)\b/i.test(t)) {
-    add('Dólar (DXY)', 'Los datos macroeconómicos pueden cambiar las expectativas sobre la política de la Fed.');
-    add('Bonos y rendimientos', 'Una sorpresa en inflación o empleo puede mover rápidamente los rendimientos.');
-    add('Nasdaq y S&P 500', 'El mercado puede reajustar sus expectativas de crecimiento y tipos.');
-    add('Oro', 'Puede reaccionar al dólar y a los rendimientos tras el dato.');
-  }
+  const high = /\b(emergency|urgent|breaking|surprise|unexpected|crisis|default|bank failure|rate decision|rate cut|rate hike|cpi|core cpi|nfp|nonfarm payrolls|fomc|war|invasion|missile|airstrike|attack|explosion|sanctions|ceasefire|intervention|halt|emergency meeting)\b/i.test(t);
+  const medium = /\b(fed|powell|central bank|inflation|pce|ppi|gdp|ism|pmi|retail sales|jobless claims|unemployment|opec|oil|tariffs?|trade war|geopolitical|bond yields?|treasury|recession|economic data)\b/i.test(t);
+  const impact = high ? 'ALTO' : medium ? 'MEDIO' : 'BAJO';
+  const impactEmoji = impact === 'ALTO' ? '🔴' : impact === 'MEDIO' ? '🟠' : '🟢';
 
-  if (/\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|dow jones|wall street|stocks?|equities|shares|tech stocks?)\b/i.test(t)) {
-    add('Nasdaq y S&P 500', 'La noticia afecta directamente al sentimiento o a las expectativas sobre la renta variable.');
-  }
+  let bias = 'MIXTO / INCIERTO';
+  if (/\b(rate cut|dovish|lower rates|falling yields|cooler inflation|inflation falls|weak jobs|missed expectations|stimulus|ceasefire|peace deal|dollar falls|dollar weakens|oil supply increase)\b/i.test(t)) bias = 'PODRÍA FAVORECER ACTIVOS DE RIESGO (confirmar reacción)';
+  if (/\b(rate hike|hawkish|higher rates|rising yields|hotter inflation|inflation rises|strong jobs|beats expectations|dollar rises|dollar strengthens|oil supply cut|supply disruption|escalation|invasion|war)\b/i.test(t)) bias = 'PRESIÓN POTENCIAL SOBRE RIESGO / POSIBLE REFUGIO (confirmar reacción)';
 
-  if (/\b(dollar|dxy|usd|currency|forex|foreign exchange)\b/i.test(t)) {
-    add('Dólar (DXY)', 'La noticia puede alterar la demanda de dólares y los movimientos de divisas.');
-    add('Oro', 'El oro suele ser sensible a los movimientos del dólar.');
-  }
-
-  if (/\b(gold|bullion|xau|precious metal)\b/i.test(t)) {
-    add('Oro (XAU/USD)', 'La noticia menciona directamente el oro o factores que influyen en su demanda.');
-  }
-
-  if (/\b(oil|crude|wti|brent|opec|petroleum|energy supply|strait of hormuz|red sea|shipping disruption)\b/i.test(t)) {
-    add('Petróleo (WTI/Brent)', 'La oferta, el transporte y los riesgos geopolíticos pueden alterar las expectativas de suministro.');
-    add('Inflación y bonos', 'Un encarecimiento de la energía puede cambiar las expectativas de inflación y tipos.');
-  }
-
-  if (GEOPOLITICAL_PATTERN.test(t)) {
-    add('Oro', 'La incertidumbre geopolítica puede aumentar la demanda de activos refugio.');
-    add('Petróleo (WTI/Brent)', 'El riesgo sobre la producción o el transporte puede provocar movimientos bruscos.');
-    add('Nasdaq y S&P 500', 'Un cambio en la percepción del riesgo puede afectar al apetito por activos de riesgo.');
-    add('Dólar (DXY) y bonos', 'En episodios de tensión puede aumentar la demanda de refugio, aunque la reacción depende del contexto.');
-  }
-
-  if (assets.length === 0) {
-    add('Nasdaq, S&P 500, oro, dólar y petróleo', 'Noticia potencialmente relevante para el sentimiento general del mercado; el impacto concreto no está claro solo con este titular.');
-  }
-
-  return { assets, reasons };
+  const confidence = (rates || macro || equity || dollar || gold || oil || geopolitics) ? 'MEDIA' : 'BAJA';
+  return { assets, reasons, impact, impactEmoji, bias, confidence };
 }
 
 async function sendDiscord(message) {
@@ -134,43 +131,41 @@ async function main() {
 
   for (const item of items) {
     const id = itemId(item);
-    if (!id) continue;
-    const date = new Date(item.isoDate || item.pubDate || 0).getTime();
-    if (seen.has(id)) continue;
+    if (!id || seen.has(id)) continue;
     newSeen.push(id);
 
+    const date = new Date(item.isoDate || item.pubDate || 0).getTime();
     const recent = Number.isFinite(date) &&
       now - date <= MAX_AGE_MINUTES * 60 * 1000 &&
       date <= now + 2 * 60 * 1000;
-
     if (!recent || !isRelevant(item)) continue;
 
-    const title = (item.title || 'Noticia de FinancialJuice').trim();
     const rawText = getItemText(item);
-    const spanish = await translateToSpanish(rawText || title);
+    const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
     const impact = analyzeImpact(`${rawText} ${spanish}`);
     const timestamp = Math.floor(date / 1000);
     const assetList = impact.assets.map((asset) => `• ${asset}`).join('\n');
     const reasonList = impact.reasons.map((reason) => `• ${reason}`).join('\n');
-
     const message = [
-      '🚨 **NOTICIA DE MERCADO · FINANCIALJUICE**',
-      `🕒 <t:${timestamp}:t>`,
+      `${impact.impactEmoji} **IMPACTO POTENCIAL: ${impact.impact}** · FinancialJuice`,
+      `🕒 <t:${timestamp}:t> · Confianza del análisis: ${impact.confidence}`,
       '',
       '**📰 RESUMEN EN ESPAÑOL**',
-      spanish.slice(0, 1300),
+      spanish.slice(0, 850),
       '',
-      '**📊 ACTIVOS QUE PODRÍA AFECTAR**',
+      '**📊 ACTIVOS A VIGILAR**',
       assetList,
       '',
       '**💡 ¿POR QUÉ?**',
       reasonList,
       '',
-      '⚠️ *Impacto potencial, no una señal de compra/venta. La dirección depende del contexto y de la reacción del mercado.*'
+      `**🧭 SESGO INICIAL:** ${impact.bias}`,
+      '',
+      '⚠️ Clasificación automática orientativa, no una señal de compra/venta. No implica dirección segura; confirma con precio, volumen, calendario y niveles técnicos.'
     ].join('\n');
 
     await sendDiscord(message.slice(0, 1950));
-    console.log('Enviada con análisis de impacto:', title);
+    console.log(`Enviada (${impact.impact}):`, item.title || id);
   }
 
   const combined = [...state.seen, ...newSeen];
