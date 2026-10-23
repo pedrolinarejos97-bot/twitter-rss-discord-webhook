@@ -10,15 +10,10 @@ const MAX_AGE_MINUTES = 12;
 const MAX_SEEN = 500;
 
 const IMPORTANT_PATTERNS = [
-  // Central banks and rates
   /\b(fed|federal reserve|powell|fomc|interest rates?|rate decision|rate cut|rate hike|ecb|boj|boe|central bank|monetary policy|treasury yields?|bond yields?)\b/i,
-  // High-impact US macro
   /\b(cpi|core cpi|pce|core pce|nfp|nonfarm payrolls?|payrolls|jobless claims|unemployment rate|nonfarm|gdp|ism|pmi|retail sales|producer price index|ppi|inflation|consumer prices?)\b/i,
-  // Indexes and risk assets
   /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|us stocks?|stock futures|equity futures|dow jones|wall street|tech stocks?|megacap)\b/i,
-  // Dollar, FX and commodities
   /\b(us dollar|dollar index|dxy|usd|gold|bullion|xau|crude oil|oil prices?|wti|brent|opec|natural gas|energy prices?)\b/i,
-  // Market-moving language
   /\b(breaking|market moving|surprise|unexpectedly|emergency|urgent|intervention|liquidity crisis|default|bank failure|banking crisis|recession|ceasefire|invasion|missile|airstrike|war declared|sanctions|tariffs?|trade war|oil supply|shipping disruption|geopolitical)\b/i
 ];
 
@@ -37,13 +32,17 @@ function itemId(item) {
   return item.guid || item.link || `${item.title || ''}|${item.pubDate || ''}`;
 }
 
-function isRelevant(item) {
-  const text = `${item.title || ''} ${item.contentSnippet || ''} ${item.content || ''}`
+function getItemText(item) {
+  return `${item.title || ''} ${item.contentSnippet || ''} ${item.content || ''}`
     .replace(/<[^>]*>/g, ' ')
-    .replace(/&nbsp;/g, ' ');
-  const isMarketRelevant = IMPORTANT_PATTERNS.some((pattern) => pattern.test(text));
-  const isUrgentGeopolitical = GEOPOLITICAL_PATTERN.test(text);
-  return isMarketRelevant || isUrgentGeopolitical;
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function isRelevant(item) {
+  const text = getItemText(item);
+  return IMPORTANT_PATTERNS.some((pattern) => pattern.test(text)) || GEOPOLITICAL_PATTERN.test(text);
 }
 
 async function translateToSpanish(text) {
@@ -56,11 +55,67 @@ async function translateToSpanish(text) {
     });
     const translated = response.data?.responseData?.translatedText;
     if (response.data?.responseStatus === 200 && translated) return translated;
-    console.warn('MyMemory no devolvió traducción válida; se enviará el titular original.');
+    console.warn('MyMemory no devolvió traducción válida; se enviará el texto original.');
   } catch (error) {
     console.warn('Falló la traducción gratuita:', error.message);
   }
   return clean;
+}
+
+function analyzeImpact(text) {
+  const t = text.toLowerCase();
+  const assets = [];
+  const reasons = [];
+
+  const add = (asset, reason) => {
+    if (!assets.includes(asset)) assets.push(asset);
+    if (!reasons.includes(reason)) reasons.push(reason);
+  };
+
+  if (/\b(fed|federal reserve|powell|fomc|ecb|boj|boe|central bank|interest rate|rate cut|rate hike|monetary policy|treasury yield|bond yield|bonds?)\b/i.test(t)) {
+    add('Bonos y rendimientos', 'Las expectativas de tipos y las compras/ventas de deuda pueden mover los rendimientos.');
+    add('Dólar (DXY)', 'Los cambios esperados en los tipos suelen alterar el atractivo relativo del dólar.');
+    add('Nasdaq y S&P 500', 'Los tipos afectan a la valoración de las acciones, especialmente las tecnológicas.');
+    add('Oro', 'El oro puede reaccionar a los rendimientos reales y al dólar.');
+  }
+
+  if (/\b(cpi|pce|inflation|inflationary|consumer prices?|ppi|producer price|payrolls|nfp|unemployment|jobless claims|gdp|ism|pmi|retail sales|economic data|jobs report)\b/i.test(t)) {
+    add('Dólar (DXY)', 'Los datos macroeconómicos pueden cambiar las expectativas sobre la política de la Fed.');
+    add('Bonos y rendimientos', 'Una sorpresa en inflación o empleo puede mover rápidamente los rendimientos.');
+    add('Nasdaq y S&P 500', 'El mercado puede reajustar sus expectativas de crecimiento y tipos.');
+    add('Oro', 'Puede reaccionar al dólar y a los rendimientos tras el dato.');
+  }
+
+  if (/\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|dow jones|wall street|stocks?|equities|shares|tech stocks?)\b/i.test(t)) {
+    add('Nasdaq y S&P 500', 'La noticia afecta directamente al sentimiento o a las expectativas sobre la renta variable.');
+  }
+
+  if (/\b(dollar|dxy|usd|currency|forex|foreign exchange)\b/i.test(t)) {
+    add('Dólar (DXY)', 'La noticia puede alterar la demanda de dólares y los movimientos de divisas.');
+    add('Oro', 'El oro suele ser sensible a los movimientos del dólar.');
+  }
+
+  if (/\b(gold|bullion|xau|precious metal)\b/i.test(t)) {
+    add('Oro (XAU/USD)', 'La noticia menciona directamente el oro o factores que influyen en su demanda.');
+  }
+
+  if (/\b(oil|crude|wti|brent|opec|petroleum|energy supply|strait of hormuz|red sea|shipping disruption)\b/i.test(t)) {
+    add('Petróleo (WTI/Brent)', 'La oferta, el transporte y los riesgos geopolíticos pueden alterar las expectativas de suministro.');
+    add('Inflación y bonos', 'Un encarecimiento de la energía puede cambiar las expectativas de inflación y tipos.');
+  }
+
+  if (GEOPOLITICAL_PATTERN.test(t)) {
+    add('Oro', 'La incertidumbre geopolítica puede aumentar la demanda de activos refugio.');
+    add('Petróleo (WTI/Brent)', 'El riesgo sobre la producción o el transporte puede provocar movimientos bruscos.');
+    add('Nasdaq y S&P 500', 'Un cambio en la percepción del riesgo puede afectar al apetito por activos de riesgo.');
+    add('Dólar (DXY) y bonos', 'En episodios de tensión puede aumentar la demanda de refugio, aunque la reacción depende del contexto.');
+  }
+
+  if (assets.length === 0) {
+    add('Nasdaq, S&P 500, oro, dólar y petróleo', 'Noticia potencialmente relevante para el sentimiento general del mercado; el impacto concreto no está claro solo con este titular.');
+  }
+
+  return { assets, reasons };
 }
 
 async function sendDiscord(message) {
@@ -77,30 +132,45 @@ async function main() {
   const seen = new Set(state.seen);
   const newSeen = [];
 
-  // First execution: establish a baseline and only consider headlines from the last 12 minutes.
   for (const item of items) {
     const id = itemId(item);
     if (!id) continue;
     const date = new Date(item.isoDate || item.pubDate || 0).getTime();
     if (seen.has(id)) continue;
     newSeen.push(id);
-    if (state.initialized && Number.isFinite(date) && now - date <= MAX_AGE_MINUTES * 60 * 1000 && date <= now + 2 * 60 * 1000 && isRelevant(item)) {
-      const title = (item.title || 'Noticia de FinancialJuice').trim();
-      const description = (item.contentSnippet || item.content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim();
-      const spanish = await translateToSpanish(description ? `${title}. ${description}` : title);
-      const timestamp = Number.isFinite(date) ? Math.floor(date / 1000) : Math.floor(now / 1000);
-      const link = item.link || 'https://www.financialjuice.com/';
-      const message = `🚨 **FINANCIALJUICE · NOTICIA POTENCIALMENTE RELEVANTE**\n<t:${timestamp}:t> · Fuente: FinancialJuice\n\n${spanish.slice(0, 1600)}\n\nOriginal: ${link}`;
-      await sendDiscord(message);
-      console.log('Enviada:', title);
-    } else if (!state.initialized && Number.isFinite(date) && now - date <= MAX_AGE_MINUTES * 60 * 1000 && isRelevant(item)) {
-      const title = (item.title || 'Noticia de FinancialJuice').trim();
-      const spanish = await translateToSpanish(title);
-      const timestamp = Math.floor(date / 1000);
-      const link = item.link || 'https://www.financialjuice.com/';
-      await sendDiscord(`🚨 **FINANCIALJUICE · NOTICIA POTENCIALMENTE RELEVANTE**\n<t:${timestamp}:t> · Fuente: FinancialJuice\n\n${spanish.slice(0, 1600)}\n\nOriginal: ${link}`);
-      console.log('Enviada durante la inicialización:', title);
-    }
+
+    const recent = Number.isFinite(date) &&
+      now - date <= MAX_AGE_MINUTES * 60 * 1000 &&
+      date <= now + 2 * 60 * 1000;
+
+    if (!recent || !isRelevant(item)) continue;
+
+    const title = (item.title || 'Noticia de FinancialJuice').trim();
+    const rawText = getItemText(item);
+    const spanish = await translateToSpanish(rawText || title);
+    const impact = analyzeImpact(`${rawText} ${spanish}`);
+    const timestamp = Math.floor(date / 1000);
+    const assetList = impact.assets.map((asset) => `• ${asset}`).join('\n');
+    const reasonList = impact.reasons.map((reason) => `• ${reason}`).join('\n');
+
+    const message = [
+      '🚨 **NOTICIA DE MERCADO · FINANCIALJUICE**',
+      `🕒 <t:${timestamp}:t>`,
+      '',
+      '**📰 RESUMEN EN ESPAÑOL**',
+      spanish.slice(0, 1300),
+      '',
+      '**📊 ACTIVOS QUE PODRÍA AFECTAR**',
+      assetList,
+      '',
+      '**💡 ¿POR QUÉ?**',
+      reasonList,
+      '',
+      '⚠️ *Impacto potencial, no una señal de compra/venta. La dirección depende del contexto y de la reacción del mercado.*'
+    ].join('\n');
+
+    await sendDiscord(message.slice(0, 1950));
+    console.log('Enviada con análisis de impacto:', title);
   }
 
   const combined = [...state.seen, ...newSeen];
