@@ -152,6 +152,7 @@ async function main() {
   }
   for (const group of groups) {
     const blocks = [];
+    const footerMarkers = new Set();
     for (const candidate of group) {
       const item = candidate.item, id = candidate.id, date = candidate.date, rawText = candidate.rawText;
       const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
@@ -176,11 +177,17 @@ async function main() {
           reasonLines.push('• 🟡 ' + asset + ': ' + reason);
         }
       }
+      for (const line of reasonLines) {
+        const marker = line.match(/^• (🟢|🔴|🟡)/);
+        if (marker) footerMarkers.add(marker[1]);
+      }
       blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '**\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
       console.log('Preparada (' + impact.impact + '):', item.title || id);
     }
     const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
-    const footer = '\n\n🟢 Posible efecto positivo · 🔴 posible efecto negativo · 🟡 mixto / incierto. No son porcentajes ni señales de entrada.\n⚠️ Análisis automático orientativo: confirma con precio, volumen y contexto.';
+    const markerLabels = [['🟢', 'Posible efecto positivo'], ['🔴', 'Posible efecto negativo'], ['🟡', 'Mixto / incierto']];
+    const markerLegend = markerLabels.filter(([marker]) => footerMarkers.has(marker)).map(([marker, label]) => marker + ' ' + label).join(' · ');
+    const footer = '\n\n' + markerLegend + '. No son porcentajes ni señales de entrada.\n⚠️ Análisis automático orientativo: confirma con precio, volumen y contexto.';
     let message = blocks.join(separator) + footer + '\n\n━━━━━━━━━━━━━━━━━━━━';
     if (message.length > 1950) {
       message = blocks.map((block) => block.slice(0, 480)).join(separator) + footer;
