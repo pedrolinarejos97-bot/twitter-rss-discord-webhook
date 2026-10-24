@@ -6,18 +6,19 @@ const FEED_URL = 'https://www.financialjuice.com/feed.ashx?xy=rss';
 const WEBHOOK = process.env.DISCORD_WEBHOOK;
 const STATE_FILE = 'state.json';
 const parser = new Parser();
-const MAX_AGE_MINUTES = 12;
+const MAX_AGE_MINUTES = 25;
 const MAX_SEEN = 800;
 
 const IMPORTANT_PATTERNS = [
-  /\b(fed|federal reserve|powell|fomc|interest rates?|rate decision|rate cut|rate hike|ecb|boj|boe|central bank|monetary policy|treasury yields?|bond yields?)\b/i,
-  /\b(cpi|core cpi|pce|core pce|nfp|nonfarm payrolls?|payrolls|jobless claims|unemployment rate|gdp|ism|pmi|retail sales|producer price index|ppi|inflation|consumer prices?)\b/i,
-  /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|us stocks?|stock futures|equity futures|dow jones|wall street|tech stocks?|megacap)\b/i,
-  /\b(us dollar|dollar index|dxy|usd|gold|bullion|xau|crude oil|oil prices?|wti|brent|opec|natural gas|energy prices?)\b/i,
-  /\b(breaking|market moving|surprise|unexpectedly|emergency|urgent|intervention|liquidity crisis|default|bank failure|banking crisis|recession|ceasefire|invasion|missile|airstrike|war declared|sanctions|tariffs?|trade war|oil supply|shipping disruption|geopolitical)\b/i
+  /\b(fed|federal reserve|powell|fomc|interest rates?|rate decision|rate cut|rate hike|ecb|boj|boe|central bank|monetary policy|treasury yields?|bond yields?|yield curve)\b/i,
+  /\b(cpi|core cpi|pce|core pce|nfp|nonfarm payrolls?|payrolls|jobless claims|unemployment rate|gdp|ism|pmi|retail sales|producer price index|ppi|inflation|consumer prices?|employment report|consumer confidence|business confidence)\b/i,
+  /\b(nasdaq|nas 100|nas100|s&p 500|s&p500|spx|us stocks?|stock futures|equity futures|dow jones|wall street|tech stocks?|megacap|futures selloff|market rally|market selloff)\b/i,
+  /\b(us dollar|dollar index|dxy|usd|gold|bullion|xau|crude oil|oil prices?|wti|brent|opec|natural gas|energy prices?|bitcoin|crypto market)\b/i,
+  /\b(breaking|market moving|surprise|unexpectedly|emergency|urgent|intervention|liquidity crisis|default|bank failure|banking crisis|recession|ceasefire|invasion|missile|airstrike|war declared|sanctions|tariffs?|trade war|oil supply|shipping disruption|geopolitical|military strike|military exercise|trade restrictions?)\b/i
 ];
 
-const GEOPOLITICAL_PATTERN = /\b(breaking|urgent|emergency|war|invasion|missile|airstrike|attack|explosion|sanctions|tariffs?|ceasefire|coup|nuclear|strait of hormuz|red sea|geopolitical|oil supply disruption|shipping disruption)\b/i;
+const GEOPOLITICAL_PATTERN = /\b(breaking|urgent|emergency|war|invasion|missile|airstrike|attack|explosion|sanctions|tariffs?|ceasefire|coup|nuclear|strait of hormuz|strait of taiwan|red sea|geopolitical|oil supply disruption|shipping disruption|military strike|military exercise|blockade|mobilization|assassination|terrorist attack|hostilities|retaliation|escalation)\b/i;
+const MARKET_RELEVANT_WORLD_PATTERN = /\b(china|chinese|taiwan|north korea|south korea|kim jong un|iran|israel|russia|ukraine|trump|white house|pentagon|nato|opec|election|presidential vote|trade deal|trade talks|tariff|sanction|military|missile|nuclear|hormuz)\b/i;
 
 function loadState() {
   try {
@@ -42,7 +43,7 @@ function getItemText(item) {
 
 function isRelevant(item) {
   const text = getItemText(item);
-  return IMPORTANT_PATTERNS.some((pattern) => pattern.test(text)) || GEOPOLITICAL_PATTERN.test(text);
+  return IMPORTANT_PATTERNS.some((pattern) => pattern.test(text)) || GEOPOLITICAL_PATTERN.test(text) || MARKET_RELEVANT_WORLD_PATTERN.test(text);
 }
 
 async function translateToSpanish(text) {
