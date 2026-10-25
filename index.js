@@ -156,7 +156,7 @@ async function main() {
     const footerMarkers = new Set();
     for (const candidate of group) {
       const item = candidate.item, id = candidate.id, date = candidate.date, rawText = candidate.rawText;
-      const spanish = await translateToSpanish(rawText || item.title || 'Noticia de mercado');
+      const spanish = (await translateToSpanish(rawText || item.title || 'Noticia de mercado')).replace(/^\s*FinancialJuice\s*:\s*/i, '');
       const impact = analyzeImpact(rawText + ' ' + spanish);
       const timestamp = Math.floor(date / 1000);
       const lower = (rawText + ' ' + spanish).toLowerCase();
@@ -182,7 +182,7 @@ async function main() {
         const marker = line.match(/^• (🟢|🔴|🟡)/);
         if (marker) footerMarkers.add(marker[1]);
       }
-      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '**\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
+      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '**\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**💡 ¿POR QUÉ?**\n' + impact.reasons.map((reason) => '• ' + reason).join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
       console.log('Preparada (' + impact.impact + '):', item.title || id);
     }
     const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
