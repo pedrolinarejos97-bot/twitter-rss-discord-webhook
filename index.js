@@ -182,7 +182,9 @@ async function main() {
         const marker = line.match(/^• (🟢|🔴|🟡)/);
         if (marker) footerMarkers.add(marker[1]);
       }
-      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '**\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + '\n\n**💡 ¿POR QUÉ?**\n' + impact.reasons.map((reason) => '• ' + reason).join('\n') + '\n\n**🧭 SESGO:** ' + impact.bias);
+      const whyLines = impact.reasons.filter((reason) => !/el texto no permite atribuir un efecto claro|no permite atribuir un efecto claro a un activo concreto/i.test(reason));
+      const whySection = whyLines.length ? '\n\n**💡 ¿POR QUÉ?**\n' + whyLines.map((reason) => '• ' + reason).join('\n') : '';
+      blocks.push(impact.impactEmoji + ' **IMPACTO POTENCIAL: ' + impact.impact + '**\n🕒 <t:' + timestamp + ':t> · Confianza: ' + impact.confidence + '\n\n**📰 NOTICIA**\n' + spanish.slice(0, 260) + '\n\n**📊 POSIBLE EFECTO POR ACTIVO**\n' + reasonLines.join('\n') + whySection + '\n\n**🧭 SESGO:** ' + impact.bias);
       console.log('Preparada (' + impact.impact + '):', item.title || id);
     }
     const separator = '\n\n━━━━━━━━━━━━━━━━━━━━\n\n';
